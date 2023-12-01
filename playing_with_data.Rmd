@@ -1,0 +1,235 @@
+---
+title: "playing_with_data"
+author: "Franky"
+date: '2023-11-20'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("/Users/frankyzhang/Desktop/Ofer-s-Proj")
+library(readxl)
+library(tidyverse)
+library(ggplot2)
+```
+
+
+## 1. From LEQ --> dose
+
+### 1.1 verification of cumulatiive dose calculation (data source: Dosimeter sample raw data and notes.xlsx)
+
+$$Dose = 100 \times \frac{T}{T_c} \times 2^{(L - L_c)/Q}$$
+```{r}
+Dosimeter.sample <- read_excel("Dosimeter sample raw data and notes.xlsx", sheet = 2)
+# criterion here to use:
+# Lc <- 85
+# Tc <- 8
+
+dose_per <- function(Time, Leq, Lc = 85, Tc = 8, Q = 3){
+  return(100*(Time/Tc)*2^((Leq - Lc)/Q))
+}
+# verify the calculation of sample
+SampleDose.cum <- 0
+time.seq <- Dosimeter.sample$`Time H`
+leq.seq  <- Dosimeter.sample$`LEQ dB`
+for(i in 1:(nrow(Dosimeter.sample)-1)){
+  SampleDose.cum = SampleDose.cum + dose_per(Time = (time.seq[i+1] - time.seq[i]), Leq = leq.seq[i+1])
+}
+print(SampleDose.cum)
+rm(time.seq, leq.seq)
+```
+
+
+### 1.2 verification of daily dose calculation (data source: DosimetryData_Example.xlsx$OriginalOutput)
+
+```{r}
+OriginalOutput <- read_excel("DosimetryData_Example.xlsx", sheet = 2)
+hours.map <- OriginalOutput[c("Day1_totalhrs", "Day2_totalhrs", "Day3_totalhrs", "Day4_totalhrs", 
+                              "Day5_totalhrs", "Day6_totalhrs", "Day7_totalhrs", "Day8_totalhrs")]
+lep.map   <- OriginalOutput[c("Day1_LEQ", "Day2_LEQ", "Day3_LEQ", "Day4_LEQ", 
+                              "Day5_LEQ", "Day6_LEQ", "Day7_LEQ", "Day8_LEQ")]
+dailydose.check <- OriginalOutput[c("Day1_Dose", "Day2_Dose", "Day3_Dose", "Day4_Dose", 
+                                    "Day5_Dose", "Day6_Dose", "Day7_Dose", "Day8_Dose")]
+columns <- c()
+for (i in 1:ncol(hours.map)) {columns[i]  = paste("Day", i, "_Dose", sep = "")}
+
+dailydose.cal <- data.frame(matrix(ncol = ncol(hours.map), nrow = nrow(hours.map)))
+colnames(dailydose.cal) <- columns
+
+for(i in 1:nrow(hours.map)){
+  for(j in 1:ncol(hours.map)){
+    dailydose.cal[i, j] = dose_per(Time = hours.map[i, j], Leq = lep.map[i, j])
+  }
+}
+# round(dailydose.cal, 2)
+# dailydose.cal
+# dailydose.check
+```
+
+_Conclusion:_
+
+Until now, this step is good, which means the calculation way from LEQ(any time interval) to 8-hour-criterion dose is reliable. 
+
+
+
+
+## 2. From 3.75 minutes Leq --> daily Leq (data source: DosimetryData_Example.xlsx$LA_matrix & $DayOfWeek)
+
+### 2.1 Data loading and processing
+
+```{r}
+# load .xlsx file and identify na with "NaN"
+LA_matrix <- read_excel("DosimetryData_Example.xlsx", sheet = 4, col_names = TRUE, na = "NaN")
+# New names:
+# • `MC16_17, 11-18-16` -> `MC16_17, 11-18-16...67`
+# • `MC16_17, 11-18-16` -> `MC16_17, 11-18-16...68`
+DayOfWeek <- read_excel("DosimetryData_Example.xlsx", sheet = 6, col_names = TRUE, na = "NaN")
+# New names:
+# • `MC16_17, 11-18-16` -> `MC16_17, 11-18-16...67`
+# • `MC16_17, 11-18-16` -> `MC16_17, 11-18-16...68`
+
+# indicting that contains duplicated names
+LA_matrix <- LA_matrix %>% select(-c(`MC16_17, 11-18-16...68`))
+colnames(LA_matrix)[colnames(LA_matrix) == "MC16_17, 11-18-16...67"] <- "MC16_17, 11-18-16"
+DayOfWeek <- DayOfWeek %>% select(-c(`MC16_17, 11-18-16...68`))
+colnames(DayOfWeek)[colnames(DayOfWeek) == "MC16_17, 11-18-16...67"] <- "MC16_17, 11-18-16"
+
+Week.Index <- data.frame(matrix(ncol = ncol(DayOfWeek), nrow = nrow(DayOfWeek)))
+colnames(Week.Index) = colnames(DayOfWeek)
+
+for(j in 1:ncol(DayOfWeek)){
+  week_index = 1
+  Week.Index[1, j] = 1
+  for(i in 2:nrow(DayOfWeek)){
+    week_index = ifelse(DayOfWeek[i-1,j]==7 & DayOfWeek[i,j]==1, week_index+1,  week_index) # identify the change of week
+    Week.Index[i, j] = week_index
+  }
+}
+
+# combine the Week.Index and DayOfWeek 
+MWeek.Index <- as.matrix(Week.Index)
+MDayOfWeek  <- as.matrix(DayOfWeek)
+Day.Index <- matrix(paste(MWeek.Index, MDayOfWeek, sep="-"), nrow=nrow(MWeek.Index), 
+                    dimnames=dimnames(MWeek.Index)) %>% as.data.frame()
+# Day.Index$CT16_01[549] # looks good 
+
+# table(Day.Index$CT16_01)
+#   1-6   1-7   2-1   2-2   2-3   2-4   2-5   2-6  2-NA NA-NA 
+#   164   384   384   384   384   384   384   208     1    11 
+# 164*0.0625 # =10.25 
+# which is the same as $OriginalOutput
+
+# create list to store every student's data 
+LA.Seq <- list()
+for (i in 1:length(colnames(LA_matrix))) {
+  # "CT16_01" 
+  # "MC16_17, 11-18-16"
+  LA.Seq[[i]] <- data.frame(Day.Index[colnames(LA_matrix)[i]], 
+                            LA_matrix[colnames(LA_matrix)[i]])
+  colnames(LA.Seq[[i]]) <- c("Week-Day", "Leq(3.75min)")
+}
+# rename the list
+names(LA.Seq) <- colnames(LA_matrix)
+LA.names <- names(LA.Seq)
+
+# remove NA records
+for(key in LA.names){
+  LA.Seq[[key]] = LA.Seq[[key]] %>% filter(!grepl("NA", `Leq(3.75min)`))
+  LA.Seq[[key]] = LA.Seq[[key]] %>% filter(!grepl("NA", `Week-Day`))
+}
+
+# remove terms that no longer use
+rm(Day.Index, MDayOfWeek, MWeek.Index, Week.Index, DayOfWeek, LA_matrix)
+
+table(LA.Seq[["CT16_01"]]["Week-Day"]) * 0.0625
+#   1-6   1-7   2-1   2-2   2-3   2-4   2-5   2-6 
+# 10.25 24.00 24.00 24.00 24.00 24.00 24.00 13.00 
+table(LA.Seq[["CT16_02, 4-15-16"]]["Week-Day"]) * 0.0625
+# Week-Day
+#     1-5     1-6     1-7     2-1     2-2     2-3     2-4     2-5 
+# 10.6875 24.0000 24.0000 24.0000 24.0000 24.0000 24.0000 13.3125 
+
+# perfect with OriginalOutput
+```
+
+### 2.2 Leq for each day calculation 
+
+$$L_{Aeq,T} = 10 * \log_{10}(\frac{1}{T_{duration}} * \sum_{i = 1}^{n}t_i * 10^{\frac{L_i}{10}})$$
+```{r}
+DayLeq <- list()
+# Take "CT16_01" for example 
+df <- LA.Seq[["CT16_01"]] %>% filter(`Week-Day` == "1-6")
+unique(LA.Seq[["CT16_01"]]$`Week-Day`)
+exp_sum <- 0
+Time_dur <- nrow(df) * 0.0625
+ti <- 0.0625
+for(i in 1:nrow(df)){
+  exp_sum <- exp_sum + (1/Time_dur)*ti*10^(df[i, 2]/10)
+}
+
+10 * log(exp_sum, base = 10)
+
+DayLeq <- list()
+for(key in LA.names){
+  # key = "CT16_01"
+  df <- LA.Seq[[key]]
+  for(day in unique(df$`Week-Day`)){
+    # day = "1-6"
+    sub_df <- df %>% filter(`Week-Day` == day)
+    exp_sum <- 0
+    Time_dur <- nrow(sub_df) * 0.0625
+    ti <- 0.0625
+    exp_sum <- 0
+    for(i in 1:nrow(sub_df)){
+      exp_sum <- exp_sum + (1/Time_dur)*ti*10^(sub_df[i, 2]/10)
+    }
+    DayLeq[[key]][day] <- 10 * log(exp_sum, base = 10)
+  }
+}
+LA.Seq[["CT16_01"]] %>% filter(`Week-Day` == "1-6") 
+DayLeq[["CT16_01"]]
+```
+
+
+### 1.3 compare the daily dose via "Daily Leq" and "Cumulative (3.75 min) Leq"
+
+```{r}
+# For each student, calculate cumulative dose for every single day 
+cumdose.cal <- list()
+for(key in LA.names){
+  # cat("key ready")
+  df <- LA.Seq[[key]]
+  days <- unique(LA.Seq[[key]]$`Week-Day`)
+  index = 1
+  for(day in days){
+    # cat("day ready\n")
+    sub_df <- df %>% filter(`Week-Day` == day)
+    # cat("sub_df ready\n")
+    Dose.cum <- c()
+    Dose.cum[1] = 0
+    for(i in 1:(nrow(sub_df)-1)){
+      Dose.cum[i+1] = Dose.cum[i] + dose_per(Time = 0.0625, Leq = sub_df$`Leq(3.75min)`[i+1])
+    }
+    cumdose.cal[[key]][index] = tail(Dose.cum, 1)
+    index = index + 1
+  }
+}
+# cumdose.cal[["CT16_01"]]
+
+cumdose.cal.df <- data.frame(matrix(ncol = ncol(dailydose.cal), nrow = nrow(dailydose.cal) - 1))
+colnames(cumdose.cal.df) <- colnames(dailydose.cal)
+for(i in 1:length(LA.names)){
+  vec <- cumdose.cal[[i]]
+  for(j in 1:length(vec)){
+    cumdose.cal.df[i, j] = vec[j]
+  }
+}
+
+dose.cal.diff <- dailydose.cal[-67, ] - cumdose.cal.df
+print(round(dose.cal.diff, 2)[sample(1:79, 10), ])
+```
+_Conclusion_
+
+The maximum difference is around 20% dose for each day. Majority of them are < 1%. Using dayily Leq to estimate rather then calculate cumulations is reliable on the whole. 
+
+
