@@ -141,7 +141,7 @@ for(key in LA.names){
 }
 
 # remove terms that no longer use
-rm(Day.Index, MDayOfWeek, MWeek.Index, Week.Index, DayOfWeek, LA_matrix)
+rm(MDayOfWeek, MWeek.Index, Week.Index, DayOfWeek)
 
 # table(LA.Seq[["CT16_01"]]["Week-Day"]) * 0.0625
 #   1-6   1-7   2-1   2-2   2-3   2-4   2-5   2-6 
@@ -220,5 +220,34 @@ print(round(dose.cal.diff, 2)[sample(1:79, 10), ])
 _Conclusion_
 
 The maximum difference is around 20% dose for each day. Majority of them are < 1%. Using dayily Leq to estimate rather then calculate cumulations is reliable on the whole. 
+
+
+
+
+## Looking into the missing data in the Sequence 
+
+```{r}
+MissingCheck <- data.frame(matrix(nrow = 3, ncol = ncol(LA_matrix)))
+colnames(MissingCheck) = colnames(LA_matrix)
+
+for(i in 1:length(colnames(LA_matrix))){
+  # i = 1
+  vec = as.matrix(LA_matrix)[, i]
+  vec[vec > 0] = 1
+  
+  count = table(vec)
+  MissingCheck[1, i] = count[1]
+  MissingCheck[2, i] = count[2]
+  MissingCheck[3, i] = nrow(LA_matrix) - (count[1] + count[2])
+}
+LA_MissingCheck <- round(MissingCheck/2688, 2)
+rownames(LA_MissingCheck) <- c("== 0", "!= 0", "NA")
+apply(LA_MissingCheck, 1, mean)
+
+#   == 0       != 0         NA 
+# 0.67886076 0.27848101 0.04240506 
+
+# 67.8% data are 0, which means not captured by the Dosimeter
+```
 
 
