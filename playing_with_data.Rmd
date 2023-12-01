@@ -2,7 +2,9 @@
 title: "playing_with_data"
 author: "Franky"
 date: '2023-11-20'
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
