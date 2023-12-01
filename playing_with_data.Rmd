@@ -101,7 +101,7 @@ for(j in 1:ncol(DayOfWeek)){
   week_index = 1
   Week.Index[1, j] = 1
   for(i in 2:nrow(DayOfWeek)){
-    week_index = ifelse(DayOfWeek[i-1,j]==7 & DayOfWeek[i,j]==1, week_index+1,  week_index) # identify the change of week
+    week_index = ifelse(DayOfWeek[i-1,j] - DayOfWeek[i,j] > 1, week_index+1,  week_index) # identify the change of week
     Week.Index[i, j] = week_index
   }
 }
@@ -141,10 +141,10 @@ for(key in LA.names){
 # remove terms that no longer use
 rm(Day.Index, MDayOfWeek, MWeek.Index, Week.Index, DayOfWeek, LA_matrix)
 
-table(LA.Seq[["CT16_01"]]["Week-Day"]) * 0.0625
+# table(LA.Seq[["CT16_01"]]["Week-Day"]) * 0.0625
 #   1-6   1-7   2-1   2-2   2-3   2-4   2-5   2-6 
 # 10.25 24.00 24.00 24.00 24.00 24.00 24.00 13.00 
-table(LA.Seq[["CT16_02, 4-15-16"]]["Week-Day"]) * 0.0625
+# table(LA.Seq[["CT16_02, 4-15-16"]]["Week-Day"]) * 0.0625
 # Week-Day
 #     1-5     1-6     1-7     2-1     2-2     2-3     2-4     2-5 
 # 10.6875 24.0000 24.0000 24.0000 24.0000 24.0000 24.0000 13.3125 
@@ -156,19 +156,6 @@ table(LA.Seq[["CT16_02, 4-15-16"]]["Week-Day"]) * 0.0625
 
 $$L_{Aeq,T} = 10 * \log_{10}(\frac{1}{T_{duration}} * \sum_{i = 1}^{n}t_i * 10^{\frac{L_i}{10}})$$
 ```{r}
-DayLeq <- list()
-# Take "CT16_01" for example 
-df <- LA.Seq[["CT16_01"]] %>% filter(`Week-Day` == "1-6")
-unique(LA.Seq[["CT16_01"]]$`Week-Day`)
-exp_sum <- 0
-Time_dur <- nrow(df) * 0.0625
-ti <- 0.0625
-for(i in 1:nrow(df)){
-  exp_sum <- exp_sum + (1/Time_dur)*ti*10^(df[i, 2]/10)
-}
-
-10 * log(exp_sum, base = 10)
-
 DayLeq <- list()
 for(key in LA.names){
   # key = "CT16_01"
